@@ -1,0 +1,9 @@
+{
+  "name": "SenatoRoom",
+  "short_name": "SenatoRoom",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f4ef",
+  "theme_color": "#701f2d",
+  "icons": []
+}

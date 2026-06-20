@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1781879250848,
+      "tag": "0000_overrated_mercury",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1781881200000,
+      "tag": "0001_senate_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1781969554491,
+      "tag": "0002_blushing_invisible_woman",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1781971840361,
+      "tag": "0003_spooky_chameleon",
+      "breakpoints": true
+    }
+  ]
+}
