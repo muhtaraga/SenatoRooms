@@ -185,4 +185,61 @@ describe("messaging API", () => {
     expect(backup.body.ok).toBe(true);
     await expect(access(path.join(backup.body.path, "senatoroom.sqlite"))).resolves.toBeUndefined();
   });
+
+  it("persists modern messaging preferences, reactions, governance, blocks, and deletion tombstones", async () => {
+    const alice = await api<{ user: User }>("POST", "/api/auth/register", {
+      phone: "5533772951", password: "test-password", displayName: "Preferences Alice"
+    });
+    const bob = await api<{ user: User }>("POST", "/api/auth/register", {
+      phone: "5533772952", password: "test-password", displayName: "Preferences Bob"
+    });
+    expect(alice.status).toBe(201);
+    expect(bob.status).toBe(201);
+
+    const dm = await api<{ conversation: Conversation }>("POST", "/api/dm", { memberId: bob.body.user.id }, alice.cookie);
+    const first = await api<{ message: { id: string; reactions: Array<{ emoji: string; count: number }> } }>("POST", `/api/messages/${dm.body.conversation.id}`, {
+      body: "Aranabilir plan notu", attachmentIds: []
+    }, alice.cookie);
+    const reply = await api<{ message: { replyTo: { id: string } | null } }>("POST", `/api/messages/${dm.body.conversation.id}`, {
+      body: "Bu mesaja yanıt", attachmentIds: [], replyToMessageId: first.body.message.id
+    }, bob.cookie);
+    expect(reply.status).toBe(201);
+    expect(reply.body.message.replyTo?.id).toBe(first.body.message.id);
+
+    const reaction = await api<{ message: { reactions: Array<{ emoji: string; count: number }> } }>("POST", `/api/messages/${first.body.message.id}/reactions`, { emoji: "👍" }, bob.cookie);
+    expect(reaction.status).toBe(201);
+    expect(reaction.body.message.reactions).toContainEqual(expect.objectContaining({ emoji: "👍", count: 1 }));
+
+    const search = await api<{ messages: Array<{ id: string }> }>("GET", `/api/conversations/${dm.body.conversation.id}/messages/search?query=plan`, undefined, alice.cookie);
+    expect(search.status).toBe(200);
+    expect(search.body.messages.map((message) => message.id)).toContain(first.body.message.id);
+
+    const muted = await api<{ conversation: { notificationLevel: string; mutedUntil: string | null } }>("PATCH", `/api/conversations/${dm.body.conversation.id}/preferences`, {
+      notificationLevel: "mentions", mutedUntil: "2030-01-01T00:00:00.000Z"
+    }, alice.cookie);
+    expect(muted.status).toBe(200);
+    expect(muted.body.conversation.notificationLevel).toBe("mentions");
+    expect(muted.body.conversation.mutedUntil).toContain("2030-01-01");
+
+    const block = await api("POST", "/api/me/blocks", { memberId: bob.body.user.id }, alice.cookie);
+    expect(block.status).toBe(201);
+    const blockedSend = await api("POST", `/api/messages/${dm.body.conversation.id}`, { body: "blocked", attachmentIds: [] }, bob.cookie);
+    expect(blockedSend.status).toBe(403);
+
+    const senate = await api<{ conversation: SenateConversation }>("POST", "/api/senates", {
+      name: "Governance Senate", description: "", memberIds: JSON.stringify([bob.body.user.id])
+    }, alice.cookie);
+    const invite = await api<{ invites: Invitation[] }>("GET", "/api/invites", undefined, bob.cookie);
+    await api("POST", `/api/invites/${invite.body.invites.at(-1)!.id}/respond`, { action: "accept" }, bob.cookie);
+    const transfer = await api<{ conversation: { createdById: string } }>("POST", `/api/senates/${senate.body.conversation.senateId}/owner`, { memberId: bob.body.user.id }, alice.cookie);
+    expect(transfer.status).toBe(200);
+    expect(transfer.body.conversation.createdById).toBe(bob.body.user.id);
+
+    const removeReaction = await api("DELETE", `/api/messages/${first.body.message.id}/reactions/${encodeURIComponent("👍")}`, undefined, bob.cookie);
+    expect(removeReaction.status).toBe(200);
+    const deleteAccount = await api("DELETE", "/api/me", { password: "test-password" }, alice.cookie);
+    expect(deleteAccount.status).toBe(200);
+    const oldLogin = await api("POST", "/api/auth/login", { phone: "5533772951", password: "test-password" });
+    expect(oldLogin.status).toBe(401);
+  });
 });

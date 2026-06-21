@@ -9,7 +9,8 @@ export const users = sqliteTable(
     passwordHash: text("password_hash").notNull(),
     displayName: text("display_name").notNull(),
     role: text("role", { enum: ["member", "owner"] }).notNull().default("member"),
-    createdAt: integer("created_at", { mode: "timestamp" }).notNull()
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+    deletedAt: integer("deleted_at", { mode: "timestamp" })
   },
   (table) => ({
     phoneIdx: uniqueIndex("users_phone_idx").on(table.phone)
@@ -22,6 +23,20 @@ export const profiles = sqliteTable("profiles", {
     .references(() => users.id, { onDelete: "cascade" }),
   photoPath: text("photo_path"),
   bio: text("bio").notNull().default(""),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull()
+});
+
+export const userSettings = sqliteTable("user_settings", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  theme: text("theme", { enum: ["system", "light", "dark"] }).notNull().default("light"),
+  reduceMotion: integer("reduce_motion", { mode: "boolean" }).notNull().default(false),
+  readReceipts: integer("read_receipts", { mode: "boolean" }).notNull().default(true),
+  showOnlineStatus: integer("show_online_status", { mode: "boolean" }).notNull().default(true),
+  soundEnabled: integer("sound_enabled", { mode: "boolean" }).notNull().default(true),
+  toastsEnabled: integer("toasts_enabled", { mode: "boolean" }).notNull().default(true),
+  badgesEnabled: integer("badges_enabled", { mode: "boolean" }).notNull().default(true),
   updatedAt: integer("updated_at", { mode: "timestamp" }).notNull()
 });
 
@@ -54,7 +69,8 @@ export const conversationMembers = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     canInvite: integer("can_invite", { mode: "boolean" }).notNull().default(false),
-    joinedAt: integer("joined_at", { mode: "timestamp" }).notNull()
+    joinedAt: integer("joined_at", { mode: "timestamp" }).notNull(),
+    leftAt: integer("left_at", { mode: "timestamp" })
   },
   (table) => ({
     uniqueMember: uniqueIndex("conversation_members_unique_idx").on(
@@ -111,6 +127,7 @@ export const messages = sqliteTable(
     senderId: text("sender_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    replyToMessageId: text("reply_to_message_id").references((): any => messages.id, { onDelete: "set null" }),
     encryptedBody: text("encrypted_body").notNull(),
     editedAt: integer("edited_at", { mode: "timestamp" }),
     deletedAt: integer("deleted_at", { mode: "timestamp" }),
@@ -118,6 +135,83 @@ export const messages = sqliteTable(
   },
   (table) => ({
     conversationIdx: index("messages_conversation_idx").on(table.conversationId)
+  })
+);
+
+export const conversationPreferences = sqliteTable(
+  "conversation_preferences",
+  {
+    id: text("id").primaryKey(),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    notificationLevel: text("notification_level", { enum: ["all", "mentions", "none"] }).notNull().default("all"),
+    mutedUntil: integer("muted_until", { mode: "timestamp" }),
+    archivedAt: integer("archived_at", { mode: "timestamp" }),
+    clearedAt: integer("cleared_at", { mode: "timestamp" }),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).notNull()
+  },
+  (table) => ({
+    userConversation: uniqueIndex("conversation_preferences_user_conversation_idx").on(table.userId, table.conversationId),
+    userArchive: index("conversation_preferences_user_archive_idx").on(table.userId, table.archivedAt)
+  })
+);
+
+export const conversationReadStates = sqliteTable(
+  "conversation_read_states",
+  {
+    id: text("id").primaryKey(),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    lastReadAt: integer("last_read_at", { mode: "timestamp" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).notNull()
+  },
+  (table) => ({
+    userConversation: uniqueIndex("conversation_read_states_user_conversation_idx").on(table.userId, table.conversationId)
+  })
+);
+
+export const userBlocks = sqliteTable(
+  "user_blocks",
+  {
+    id: text("id").primaryKey(),
+    blockerId: text("blocker_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    blockedUserId: text("blocked_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull()
+  },
+  (table) => ({
+    uniqueBlock: uniqueIndex("user_blocks_unique_idx").on(table.blockerId, table.blockedUserId),
+    blockedUser: index("user_blocks_blocked_user_idx").on(table.blockedUserId)
+  })
+);
+
+export const messageReactions = sqliteTable(
+  "message_reactions",
+  {
+    id: text("id").primaryKey(),
+    messageId: text("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    emoji: text("emoji").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull()
+  },
+  (table) => ({
+    uniqueReaction: uniqueIndex("message_reactions_unique_idx").on(table.messageId, table.userId, table.emoji),
+    messageIndex: index("message_reactions_message_idx").on(table.messageId)
   })
 );
 

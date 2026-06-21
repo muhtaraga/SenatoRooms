@@ -1,3 +1,6 @@
+export type Theme = "system" | "light" | "dark";
+export type NotificationLevel = "all" | "mentions" | "none";
+
 export type User = {
   id: string;
   phone: string;
@@ -5,10 +8,23 @@ export type User = {
   role: "member" | "owner";
   photoPath: string | null;
   bio: string;
+  deleted?: boolean;
   adminAccess: boolean;
 };
 
 export type Member = User;
+
+export type UserSettings = {
+  userId: string;
+  theme: Theme;
+  reduceMotion: boolean;
+  readReceipts: boolean;
+  showOnlineStatus: boolean;
+  soundEnabled: boolean;
+  toastsEnabled: boolean;
+  badgesEnabled: boolean;
+  updatedAt: string;
+};
 
 export type Attachment = {
   id: string;
@@ -17,6 +33,18 @@ export type Attachment = {
   size: number;
   url?: string;
   previewUrl?: string;
+};
+
+export type MessageReaction = {
+  emoji: string;
+  count: number;
+  reacted: boolean;
+};
+
+export type MessageReply = {
+  id: string;
+  senderName: string;
+  body: string;
 };
 
 export type Message = {
@@ -30,10 +58,13 @@ export type Message = {
   createdAt: string;
   readCount: number;
   attachments: Attachment[];
+  replyTo: MessageReply | null;
+  reactions: MessageReaction[];
 };
 
 export type Conversation = {
   id: string;
+  viewerId: string;
   type: "dm" | "senate";
   title: string;
   senateId: string | null;
@@ -42,6 +73,10 @@ export type Conversation = {
   createdById: string | null;
   canEdit: boolean;
   canInvite: boolean;
+  unreadCount: number;
+  archivedAt: string | null;
+  notificationLevel: NotificationLevel;
+  mutedUntil: string | null;
   members: Array<{
     id: string;
     phone: string;

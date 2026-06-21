@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { config } from "../config";
+import { sqlite } from "../db";
 
 export type AuthUser = {
   id: string;
@@ -36,7 +37,10 @@ export function readAuthToken(rawCookie = "") {
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const user = readAuthToken(req.headers.cookie);
-  if (!user) {
+  const activeUser = user
+    ? sqlite.prepare("select id from users where id = ? and deleted_at is null limit 1").get(user.id)
+    : null;
+  if (!user || !activeUser) {
     res.status(401).json({ error: "Oturum gerekli." });
     return;
   }
