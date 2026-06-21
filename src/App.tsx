@@ -38,9 +38,9 @@ import {
   VolumeX,
   X
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { io, type Socket } from "socket.io-client";
-import { api } from "./api";
+import { ApiError, api } from "./api";
 import type { Attachment, Conversation, Invitation, Member, Message, NotificationLevel, Theme, User, UserSettings } from "./types";
 
 type Nav = "all" | "private" | "senates" | "invites" | "archived" | "settings" | "admin";
@@ -123,6 +123,7 @@ function ConversationList({ conversations, selectedId, active, onSelect, onCreat
 
 function AttachmentView({ attachment }: { attachment: Attachment }) {
   if (attachment.mimeType.startsWith("image/") && attachment.previewUrl) return <a className="message-image" href={attachment.previewUrl} target="_blank" rel="noreferrer"><img src={attachment.previewUrl} alt={attachment.originalName} /></a>;
+  if (attachment.mimeType.startsWith("video/") && attachment.previewUrl) return <video className="message-video" controls preload="metadata" playsInline aria-label={attachment.originalName}><source src={attachment.previewUrl} type={attachment.mimeType} />Tarayıcınız bu videoyu oynatmayı desteklemiyor.</video>;
   return <a className="attachment-card" href={attachment.url} target="_blank" rel="noreferrer"><FileText size={20} /><span><b>{attachment.originalName}</b><small>{fileSize(attachment.size)}</small></span><Download size={18} /></a>;
 }
 
@@ -136,8 +137,36 @@ function ChatPanel({ user, conversation, messages, hasMore, onLoadOlder, onSend,
   const [menuId, setMenuId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
-  useEffect(() => { setBody(""); setPending([]); setReply(null); setEditing(null); }, [conversation?.id]);
-  useEffect(() => { messages.filter((message) => message.senderId !== user.id).forEach((message) => onMarkRead(message.id)); }, [messages, onMarkRead, user.id]);
+  const streamRef = useRef<HTMLDivElement | null>(null);
+  const previousConversationIdRef = useRef<string | null>(null);
+  const previousFirstMessageIdRef = useRef<string | null>(null);
+  const previousMessageCountRef = useRef(0);
+  const shouldScrollToBottomRef = useRef(false);
+  const markedMessageIdsRef = useRef(new Set<string>());
+  useEffect(() => { setBody(""); setPending([]); setReply(null); setEditing(null); markedMessageIdsRef.current = new Set(); }, [conversation?.id]);
+  useEffect(() => {
+    messages
+      .filter((message) => message.senderId !== user.id && !markedMessageIdsRef.current.has(message.id))
+      .forEach((message) => { markedMessageIdsRef.current.add(message.id); onMarkRead(message.id); });
+  }, [messages, onMarkRead, user.id]);
+  useLayoutEffect(() => {
+    if (!conversation || !streamRef.current) return;
+    const firstMessageId = messages[0]?.id ?? null;
+    const conversationChanged = previousConversationIdRef.current !== conversation.id;
+    const loadedOlderMessages = Boolean(
+      previousFirstMessageIdRef.current
+      && firstMessageId !== previousFirstMessageIdRef.current
+      && messages.some((message) => message.id === previousFirstMessageIdRef.current)
+    );
+    if (conversationChanged) shouldScrollToBottomRef.current = true;
+    if (shouldScrollToBottomRef.current || (!loadedOlderMessages && messages.length > previousMessageCountRef.current)) {
+      streamRef.current.scrollTop = streamRef.current.scrollHeight;
+      shouldScrollToBottomRef.current = false;
+    }
+    previousConversationIdRef.current = conversation.id;
+    previousFirstMessageIdRef.current = firstMessageId;
+    previousMessageCountRef.current = messages.length;
+  }, [conversation, messages]);
   if (!conversation) return <section className="empty-chat"><span className="empty-chat-icon"><MessageCircle size={32} /></span><h2>Bir sohbet seçin</h2><p>Özel üyelerle veya davetli senatolarla güvenli şekilde iletişim kurun.</p></section>;
   async function upload(file?: File) {
     if (!file) return;
@@ -150,7 +179,7 @@ function ChatPanel({ user, conversation, messages, hasMore, onLoadOlder, onSend,
     if (sent) { setBody(""); setPending([]); setReply(null); }
   }
   let previousDate = "";
-  return <section className="chat-panel"><header className="chat-header"><div className="chat-identity"><Avatar name={conversation.title} photoPath={conversation.photoPath} senate={conversation.type === "senate"} /><div><h2>{conversation.title}</h2><p>{conversation.type === "senate" ? `${conversation.members.length} üye` : conversation.mutedUntil ? "Bildirimler sessizde" : "Özel konuşma"}</p></div></div><div className="chat-actions"><IconButton label="Sohbette ara" onClick={onSearch}><Search size={19} /></IconButton><IconButton label={conversation.type === "senate" ? "Senato bilgileri" : "Sohbet ayarları"} onClick={conversation.type === "senate" ? onOpenSenate : onOpenSettings}><MoreHorizontal size={20} /></IconButton></div></header><div className="message-stream">{hasMore ? <button className="load-older" onClick={() => void onLoadOlder()}>Daha eski mesajları yükle</button> : null}{messages.map((message) => { const date = new Date(message.createdAt).toDateString(); const showDate = date !== previousDate; previousDate = date; const mine = message.senderId === user.id; const isEditing = editing?.id === message.id; return <div key={message.id}>{showDate ? <div className="date-divider"><span>{formatDate(message.createdAt)}</span></div> : null}<article className={`message ${mine ? "mine" : ""}`}><div className="message-avatar">{!mine ? <Avatar name={message.senderName} /> : null}</div><div className="message-stack">{!mine && conversation.type === "senate" ? <strong className="message-sender">{message.senderName}</strong> : null}<div className="message-bubble">{message.replyTo ? <div className="reply-preview"><b>{message.replyTo.senderName}</b><span>{message.replyTo.body}</span></div> : null}{message.deletedAt ? <em>Bu mesaj silindi.</em> : isEditing ? <div className="message-editor"><textarea value={editing.body} onChange={(event) => setEditing({ ...editing, body: event.target.value })} /><div><button onClick={() => setEditing(null)}>İptal</button><button onClick={() => { if (editing.body.trim()) { onEdit(message.id, editing.body); setEditing(null); } }}>Kaydet</button></div></div> : <p>{message.body}</p>}{message.attachments.map((attachment) => <AttachmentView key={attachment.id} attachment={attachment} />)}<footer><span>{formatTime(message.createdAt)}</span>{message.editedAt ? <span>düzenlendi</span> : null}{mine ? message.readCount > 1 ? <CheckCheck size={15} /> : <Check size={15} /> : null}</footer></div>{!message.deletedAt ? <div className="reaction-row">{message.reactions.map((reaction) => <button key={reaction.emoji} className={reaction.reacted ? "reacted" : ""} onClick={() => reaction.reacted ? onUnreact(message.id, reaction.emoji) : onReact(message.id, reaction.emoji)}>{reaction.emoji} <span>{reaction.count}</span></button>)}<button className="quick-reaction" aria-label="Beğen" onClick={() => onReact(message.id, "👍")}><Smile size={15} /></button></div> : null}</div><div className="message-menu-wrap">{!message.deletedAt ? <IconButton label="Mesaj işlemleri" onClick={() => setMenuId(menuId === message.id ? null : message.id)}><MoreHorizontal size={17} /></IconButton> : null}{menuId === message.id ? <div className="message-menu"><button onClick={() => { setReply(message); setMenuId(null); }}>Yanıtla</button>{mine ? <><button onClick={() => { setEditing({ id: message.id, body: message.body }); setMenuId(null); }}>Düzenle</button><button className="danger-text" onClick={() => { onDelete(message.id); setMenuId(null); }}>Sil</button></> : null}</div> : null}</div></article></div>; })}</div>{pending.length ? <div className="pending-files">{pending.map((item) => <span key={item.id}><Paperclip size={15} />{item.originalName}<button onClick={() => setPending((current) => current.filter((pendingItem) => pendingItem.id !== item.id))}><X size={14} /></button></span>)}</div> : null}{reply ? <div className="composer-reply"><div><b>{reply.senderName} mesajına yanıt</b><span>{reply.body}</span></div><IconButton label="Yanıtı kaldır" onClick={() => setReply(null)}><X size={17} /></IconButton></div> : null}{uploadError ? <p className="composer-error">{uploadError}</p> : null}<footer className="composer"><input ref={fileRef} hidden type="file" onChange={(event) => { void upload(event.target.files?.[0]); event.currentTarget.value = ""; }} /><IconButton label="Dosya ekle" onClick={() => fileRef.current?.click()}><FileUp size={19} /></IconButton><textarea value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Mesaj yazın" /><IconButton label="Gönder" onClick={() => void submit()} active><Send size={19} /></IconButton></footer></section>;
+  return <section className="chat-panel"><header className="chat-header"><div className="chat-identity"><Avatar name={conversation.title} photoPath={conversation.photoPath} senate={conversation.type === "senate"} /><div><h2>{conversation.title}</h2><p>{conversation.type === "senate" ? `${conversation.members.length} üye` : conversation.mutedUntil ? "Bildirimler sessizde" : "Özel konuşma"}</p></div></div><div className="chat-actions"><IconButton label="Sohbette ara" onClick={onSearch}><Search size={19} /></IconButton><IconButton label={conversation.type === "senate" ? "Senato bilgileri" : "Sohbet ayarları"} onClick={conversation.type === "senate" ? onOpenSenate : onOpenSettings}><MoreHorizontal size={20} /></IconButton></div></header><div className="message-stream" ref={streamRef}>{hasMore ? <button className="load-older" onClick={() => void onLoadOlder()}>Daha eski mesajları yükle</button> : null}{messages.map((message) => { const date = new Date(message.createdAt).toDateString(); const showDate = date !== previousDate; previousDate = date; const mine = message.senderId === user.id; const isEditing = editing?.id === message.id; return <div key={message.id}>{showDate ? <div className="date-divider"><span>{formatDate(message.createdAt)}</span></div> : null}<article className={`message ${mine ? "mine" : ""}`}><div className="message-avatar">{!mine ? <Avatar name={message.senderName} /> : null}</div><div className="message-stack">{!mine && conversation.type === "senate" ? <strong className="message-sender">{message.senderName}</strong> : null}<div className="message-bubble">{message.replyTo ? <div className="reply-preview"><b>{message.replyTo.senderName}</b><span>{message.replyTo.body}</span></div> : null}{message.deletedAt ? <em>Bu mesaj silindi.</em> : isEditing ? <div className="message-editor"><textarea value={editing.body} onChange={(event) => setEditing({ ...editing, body: event.target.value })} /><div><button onClick={() => setEditing(null)}>İptal</button><button onClick={() => { if (editing.body.trim()) { onEdit(message.id, editing.body); setEditing(null); } }}>Kaydet</button></div></div> : <p>{message.body}</p>}{message.attachments.map((attachment) => <AttachmentView key={attachment.id} attachment={attachment} />)}<footer><span>{formatTime(message.createdAt)}</span>{message.editedAt ? <span>düzenlendi</span> : null}{mine ? message.readCount > 1 ? <CheckCheck size={15} /> : <Check size={15} /> : null}</footer></div>{!message.deletedAt ? <div className="reaction-row">{message.reactions.map((reaction) => <button key={reaction.emoji} className={reaction.reacted ? "reacted" : ""} onClick={() => reaction.reacted ? onUnreact(message.id, reaction.emoji) : onReact(message.id, reaction.emoji)}>{reaction.emoji} <span>{reaction.count}</span></button>)}<button className="quick-reaction" aria-label="Beğen" onClick={() => onReact(message.id, "👍")}><Smile size={15} /></button></div> : null}</div><div className="message-menu-wrap">{!message.deletedAt ? <IconButton label="Mesaj işlemleri" onClick={() => setMenuId(menuId === message.id ? null : message.id)}><MoreHorizontal size={17} /></IconButton> : null}{menuId === message.id ? <div className="message-menu"><button onClick={() => { setReply(message); setMenuId(null); }}>Yanıtla</button>{mine ? <><button onClick={() => { setEditing({ id: message.id, body: message.body }); setMenuId(null); }}>Düzenle</button><button className="danger-text" onClick={() => { onDelete(message.id); setMenuId(null); }}>Sil</button></> : null}</div> : null}</div></article></div>; })}</div>{pending.length ? <div className="pending-files">{pending.map((item) => <span key={item.id}><Paperclip size={15} />{item.originalName}<button onClick={() => setPending((current) => current.filter((pendingItem) => pendingItem.id !== item.id))}><X size={14} /></button></span>)}</div> : null}{reply ? <div className="composer-reply"><div><b>{reply.senderName} mesajına yanıt</b><span>{reply.body}</span></div><IconButton label="Yanıtı kaldır" onClick={() => setReply(null)}><X size={17} /></IconButton></div> : null}{uploadError ? <p className="composer-error">{uploadError}</p> : null}<footer className="composer"><input ref={fileRef} hidden type="file" onChange={(event) => { void upload(event.target.files?.[0]); event.currentTarget.value = ""; }} /><IconButton label="Dosya ekle" onClick={() => fileRef.current?.click()}><FileUp size={19} /></IconButton><textarea value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Mesaj yazın" /><IconButton label="Gönder" onClick={() => void submit()} active><Send size={19} /></IconButton></footer></section>;
 }
 
 function SearchDrawer({ open, conversation, onClose, onSearch }: { open: boolean; conversation: Conversation | null; onClose: () => void; onSearch: (query: string) => Promise<Message[]> }) {
@@ -202,16 +231,71 @@ function ToggleRow({ icon, title, detail, checked, onChange }: { icon: ReactNode
 
 export function App() {
   const [user, setUser] = useState<User | null>(null); const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS); const [conversations, setConversations] = useState<Conversation[]>([]); const [archived, setArchived] = useState<Conversation[]>([]); const [invites, setInvites] = useState<Invitation[]>([]); const [selectedId, setSelectedId] = useState<string | null>(null); const [messages, setMessages] = useState<Message[]>([]); const [hasMore, setHasMore] = useState(false); const [cursor, setCursor] = useState<string | null>(null); const [activeNav, setActiveNav] = useState<Nav>("all"); const [createOpen, setCreateOpen] = useState(false); const [settingsOpen, setSettingsOpen] = useState(false); const [senateOpen, setSenateOpen] = useState(false); const [searchOpen, setSearchOpen] = useState(false); const [status, setStatus] = useState(""); const socketRef = useRef<Socket | null>(null); const selectedRef = useRef<string | null>(null);
+  const messageRequestRef = useRef<AbortController | null>(null);
   const selected = useMemo(() => conversations.find((conversation) => conversation.id === selectedId) ?? archived.find((conversation) => conversation.id === selectedId) ?? null, [archived, conversations, selectedId]);
-  const upsertConversation = useCallback((conversation: Conversation) => setConversations((current) => [conversation, ...current.filter((item) => item.id !== conversation.id)]), []);
+  const upsertConversation = useCallback((conversation: Conversation) => {
+    setConversations((current) => [conversation, ...current.filter((item) => item.id !== conversation.id)]);
+    setArchived((current) => current.filter((item) => item.id !== conversation.id));
+  }, []);
   const run = useCallback(async (action: () => Promise<unknown>, success?: string) => { try { await action(); if (success) setStatus(success); return true; } catch (error) { setStatus(error instanceof Error ? error.message : "İşlem gerçekleştirilemedi."); return false; } }, []);
   const loadConversations = useCallback(async () => { const [active, archivedPayload] = await Promise.all([api.conversations(), api.conversations(true)]); setConversations(active.conversations); setArchived(archivedPayload.conversations); setSelectedId((current) => current ?? active.conversations[0]?.id ?? null); }, []);
-  useEffect(() => { api.me().then(({ user: nextUser }) => { setUser(nextUser); return Promise.all([api.settings(), loadConversations(), api.invites()]); }).then(([settingsPayload, , invitePayload]) => { setSettings(settingsPayload.settings); setInvites(invitePayload.invites); }).catch(() => undefined); }, [loadConversations]);
+  const loadMessages = useCallback(async (conversationId: string, retried = false): Promise<void> => {
+    messageRequestRef.current?.abort();
+    const controller = new AbortController();
+    messageRequestRef.current = controller;
+    try {
+      const payload = await api.messages(conversationId, null, controller.signal);
+      if (selectedRef.current !== conversationId || controller.signal.aborted) return;
+      setMessages(payload.messages); setHasMore(payload.hasMore); setCursor(payload.nextCursor);
+    } catch (error) {
+      if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
+      if (error instanceof ApiError && error.status === 403) {
+        if (selectedRef.current === conversationId) {
+          selectedRef.current = null; setSelectedId(null); setMessages([]); setCursor(null); setHasMore(false);
+          await loadConversations();
+        }
+        setStatus("Bu sohbete erişiminiz kaldırıldı.");
+        return;
+      }
+      if (error instanceof ApiError && error.retryable && !retried) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 300));
+        if (selectedRef.current === conversationId) await loadMessages(conversationId, true);
+        return;
+      }
+      if (selectedRef.current === conversationId) setStatus(error instanceof Error ? error.message : "Mesajlar yüklenemedi.");
+    }
+  }, [loadConversations]);
+  useEffect(() => { if (user) return; api.me().then(({ user: nextUser }) => setUser(nextUser)).catch(() => undefined); }, [user]);
+  useEffect(() => {
+    if (!user) return;
+    Promise.all([api.settings(), loadConversations(), api.invites()])
+      .then(([settingsPayload, , invitePayload]) => { setSettings(settingsPayload.settings); setInvites(invitePayload.invites); })
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Uygulama verileri yüklenemedi."));
+  }, [loadConversations, user?.id]);
   useEffect(() => { selectedRef.current = selectedId; }, [selectedId]);
   useEffect(() => { if (!status) return; const id = window.setTimeout(() => setStatus(""), 4500); return () => window.clearTimeout(id); }, [status]);
   useEffect(() => { const root = document.documentElement; root.dataset.theme = settings.theme; root.dataset.reduceMotion = String(settings.reduceMotion); }, [settings.reduceMotion, settings.theme]);
   useEffect(() => { if (!user) return; const socket = io("/", { withCredentials: true }); socketRef.current = socket; socket.on("conversation:updated", (conversation: Conversation) => { if (conversation.archivedAt) { setArchived((current) => [conversation, ...current.filter((item) => item.id !== conversation.id)]); setConversations((current) => current.filter((item) => item.id !== conversation.id)); } else upsertConversation(conversation); }); socket.on("senate:invite", (invite: Invitation) => setInvites((current) => [invite, ...current.filter((item) => item.id !== invite.id)])); const updateMessage = (message: Message) => { if (message.conversationId === selectedRef.current) setMessages((current) => current.some((item) => item.id === message.id) ? current.map((item) => item.id === message.id ? message : item) : [...current, message]); }; socket.on("message:new", (message: Message) => { updateMessage(message); if (message.senderId !== user.id && settings.toastsEnabled) { setStatus(`Yeni mesaj: ${message.senderName}`); if (settings.soundEnabled) new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=").play().catch(() => undefined); } }); socket.on("message:edited", updateMessage); socket.on("message:deleted", updateMessage); socket.on("message:read", updateMessage); socket.on("message:reaction", updateMessage); return () => { socket.close(); socketRef.current = null; }; }, [settings.soundEnabled, settings.toastsEnabled, upsertConversation, user]);
-  useEffect(() => { if (!selectedId || !user) return; let live = true; setMessages([]); setCursor(null); setHasMore(false); socketRef.current?.emit("conversation:join", selectedId); api.messages(selectedId).then((payload) => { if (!live) return; setMessages(payload.messages); setHasMore(payload.hasMore); setCursor(payload.nextCursor); }).catch((error: unknown) => live && setStatus(error instanceof Error ? error.message : "Mesajlar yüklenemedi.")); return () => { live = false; socketRef.current?.emit("conversation:leave", selectedId); }; }, [selectedId, user]);
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    const removeConversation = ({ conversationId }: { conversationId: string }) => {
+      setConversations((current) => current.filter((conversation) => conversation.id !== conversationId));
+      setArchived((current) => current.filter((conversation) => conversation.id !== conversationId));
+      if (selectedRef.current === conversationId) {
+        selectedRef.current = null; setSelectedId(null); setMessages([]); setCursor(null); setHasMore(false);
+        setSettingsOpen(false); setSenateOpen(false); setSearchOpen(false);
+      }
+    };
+    socket.on("conversation:removed", removeConversation);
+    return () => { socket.off("conversation:removed", removeConversation); };
+  }, [settings.soundEnabled, settings.toastsEnabled, user]);
+  useEffect(() => { if (!selectedId || !user) return; setMessages([]); setCursor(null); setHasMore(false); socketRef.current?.emit("conversation:join", selectedId); void loadMessages(selectedId); return () => { messageRequestRef.current?.abort(); socketRef.current?.emit("conversation:leave", selectedId); }; }, [loadMessages, selectedId, user]);
+  useLayoutEffect(() => {
+    if (!selectedId || !messages.some((message) => message.conversationId !== selectedId)) return;
+    setMessages((current) => current.filter((message) => message.conversationId === selectedId));
+    setCursor(null); setHasMore(false);
+  }, [messages, selectedId]);
   useEffect(() => { const close = (event: KeyboardEvent) => { if (event.key === "Escape") { setCreateOpen(false); setSettingsOpen(false); setSenateOpen(false); setSearchOpen(false); } }; window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close); }, []);
   if (!user) return <AuthScreen onAuth={setUser} />;
   const visibleConversations = activeNav === "archived" ? archived : conversations;

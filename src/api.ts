@@ -10,14 +10,27 @@ import type {
   UserSettings
 } from "./types";
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number | null, public readonly url: string, public readonly retryable: boolean) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(url, {
-    credentials: "include",
-    headers: options.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
-    ...options
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      credentials: "include",
+      headers: options.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
+      ...options
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new ApiError("Sunucuya bağlanılamadı. Lütfen tekrar deneyin.", null, url, true);
+  }
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error ?? "İstek başarısız.");
+  if (!response.ok) throw new ApiError(payload.error ?? "İstek başarısız.", response.status, url, response.status >= 500);
   return payload as T;
 }
 
@@ -43,7 +56,7 @@ export const api = {
   conversations: (archived = false) => request<{ conversations: Conversation[] }>(`/api/conversations${archived ? "?archived=true" : ""}`),
   invites: () => request<{ invites: Invitation[] }>("/api/invites"),
   respondToInvite: (id: string, action: "accept" | "decline" | "block") => request<{ status?: "declined" | "blocked"; conversation?: Conversation }>(`/api/invites/${id}/respond`, { method: "POST", body: JSON.stringify({ action }) }),
-  messages: (conversationId: string, before?: string | null) => request<{ messages: Message[]; hasMore: boolean; nextCursor: string | null }>(`/api/conversations/${conversationId}/messages?limit=30${before ? `&before=${encodeURIComponent(before)}` : ""}`),
+  messages: (conversationId: string, before?: string | null, signal?: AbortSignal) => request<{ messages: Message[]; hasMore: boolean; nextCursor: string | null }>(`/api/conversations/${conversationId}/messages?limit=30${before ? `&before=${encodeURIComponent(before)}` : ""}`, { signal }),
   searchMessages: (conversationId: string, input: { query: string; senderId?: string; from?: string; to?: string }) => {
     const params = new URLSearchParams({ query: input.query });
     if (input.senderId) params.set("senderId", input.senderId);

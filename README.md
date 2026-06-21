@@ -135,3 +135,96 @@ cloudflared tunnel run --url http://localhost:4000 senatoroom
 ```
 
 Tüneli `http://localhost:4000` hedefine yönlendirin. Vite yalnızca geliştirme içindir; üretimde Express derlenmiş arayüzü de sunar.
+
+## API kullanım rehberi
+
+API varsayılan olarak `http://localhost:4000` adresindedir. İstek ve yanıt gövdeleri aksi belirtilmedikçe JSON'dur. Başarısız istekler `{ "error": "..." }` biçiminde bir gövde döndürür.
+
+### Kimlik doğrulama
+
+Kayıt ve giriş uçları `HttpOnly` oturum çerezi ayarlar. Tarayıcı dışından istek atarken çerezi saklayıp sonraki isteklerde gönderin. Tarayıcı tabanlı istemcilerde çapraz kaynak isteği yapılıyorsa `credentials: "include"` kullanın.
+
+```powershell
+# Kaydol ve oturum çerezini api-cookie.txt dosyasına yaz
+curl.exe -i -c api-cookie.txt -X POST http://localhost:4000/api/auth/register `
+  -H "Content-Type: application/json" `
+  -d '{"phone":"5533770000","password":"guclu-parola","displayName":"Ada Lovelace"}'
+
+# Oturum gerektiren istek
+curl.exe -b api-cookie.txt http://localhost:4000/api/me
+```
+
+Telefon numarası Türkiye cep telefonu biçiminde olmalıdır. Parola 8–72 bayt, görünen ad en fazla 80 karakterdir. İlk kayıt olan hesap `owner` rolünü alır.
+
+### Temel akış
+
+1. `POST /api/auth/register` veya `POST /api/auth/login` ile oturum açın.
+2. `GET /api/members?query=...` ile kullanıcı arayın.
+3. `POST /api/dm` ile bire bir konuşma oluşturun veya mevcut konuşmayı alın.
+4. Ek varsa önce `POST /api/attachments` ile yükleyin, dönen ek kimliklerini `POST /api/messages/:conversationId` isteğine ekleyin.
+5. Yeni olayları gerçek zamanlı almak için aynı oturumla Socket.IO bağlantısı açın.
+
+### Uç noktalar
+
+`*` işaretli uç noktalar oturum gerektirir. `:id`, `:conversationId` ve `:memberId` yer tutucularını gerçek UUID değerleriyle değiştirin.
+
+| Yöntem | Yol | İstek gövdesi veya sorgu | Amaç |
+| --- | --- | --- | --- |
+| POST | `/api/auth/register` | `{ phone, password, displayName }` | Kayıt olur ve oturum açar. |
+| POST | `/api/auth/login` | `{ phone, password }` | Oturum açar. |
+| POST | `/api/auth/logout` | — | Oturumu kapatır. |
+| GET* | `/api/me` | — | Geçerli kullanıcıyı döndürür. |
+| PATCH* | `/api/me/profile` | `{ displayName, bio }` | Profili günceller. |
+| POST* | `/api/me/photo` | `multipart/form-data`: `photo` | Profil fotoğrafını yükler. |
+| GET/PATCH* | `/api/me/settings` | PATCH: tema ve bildirim seçenekleri | Kullanıcı ayarlarını okur/günceller. |
+| PATCH* | `/api/me/password` | `{ currentPassword, newPassword }` | Parolayı değiştirir. |
+| DELETE* | `/api/me` | `{ password }` | Hesabı siler. |
+| GET* | `/api/members?query=ab` | En az 2 karakterli `query` | Üye arar. |
+| GET* | `/api/members/:id` | — | Ortak konuşması olan üyenin profilini verir. |
+| GET* | `/api/conversations?archived=true` | `archived` isteğe bağlı | Konuşmaları listeler. |
+| GET* | `/api/conversations/:id/messages` | `limit` (1–50), `before` | Sayfalı mesaj geçmişini döndürür. |
+| POST* | `/api/dm` | `{ memberId }` | Bire bir konuşma oluşturur veya döndürür. |
+| POST* | `/api/senates` | Form alanları: `name`, `description`, `memberIds`, isteğe bağlı `photo` | Davetli grup sohbeti oluşturur. |
+| PATCH* | `/api/senates/:id` | Form alanları: `name`, `description`, isteğe bağlı `photo` | Kurucunun senato bilgilerini günceller. |
+| POST* | `/api/senates/:id/invites` | `{ memberId }` | Yetkili üye davet eder. |
+| GET* | `/api/invites` | — | Bekleyen davetleri listeler. |
+| POST* | `/api/invites/:id/respond` | `{ action: "accept" \| "decline" \| "block" }` | Daveti yanıtlar. |
+| POST* | `/api/senates/:id/permissions` | `{ memberId, canInvite }` | Kurucu, davet yetkisini değiştirir. |
+| POST* | `/api/senates/:id/leave` | — | Üye senatodan ayrılır. |
+| DELETE* | `/api/senates/:id/members/:memberId` | — | Kurucu üyeyi çıkarır. |
+| POST* | `/api/senates/:id/owner` | `{ memberId }` | Kuruculuğu devreder. |
+| DELETE* | `/api/senates/:id` | — | Kurucu senatoyu siler. |
+| POST* | `/api/messages/:conversationId` | `{ body, attachmentIds, replyToMessageId? }` | Mesaj gönderir. |
+| PATCH/DELETE* | `/api/messages/:id` | PATCH: `{ body }` | Gönderen mesajını günceller veya siler. |
+| POST* | `/api/messages/:id/read` | — | Mesajı okunmuş işaretler. |
+| POST/DELETE* | `/api/messages/:id/reactions` | POST: `{ emoji }` | Tepki ekler; silme yolu `/reactions/:emoji`'dir. |
+| PATCH* | `/api/conversations/:id/preferences` | `{ notificationLevel?, mutedUntil?, archived?, clear? }` | Konuşma tercihlerini günceller. |
+| GET* | `/api/conversations/:id/media` | — | Konuşmadaki ekleri listeler. |
+| GET* | `/api/conversations/:id/messages/search` | `query`, isteğe bağlı `senderId`, `from`, `to` | Mesaj arar. |
+| GET/POST/DELETE* | `/api/me/blocks` | POST: `{ memberId }`; DELETE yolu `/:id` | Engellenen üyeleri yönetir. |
+| POST* | `/api/attachments` | `multipart/form-data`: `conversationId`, `file` | Mesaja bağlanacak eki yükler. |
+| GET* | `/api/attachments/:id` | — | Eki indirir. |
+| GET* | `/api/attachments/:id/preview` | — | Görsel/video önizlemesini verir. |
+| POST* | `/api/admin/backup` | — | Yalnızca yerel yönetici için yedek oluşturur. |
+
+`memberIds`, form gönderiminde JSON dizisi (ör. `["uuid-1","uuid-2"]`) ya da tekrarlanan alan olarak iletilebilir. Dosya ekleri en fazla 25 MB'dir; bir mesaja en fazla 10 ek bağlanabilir.
+
+### Mesaj ve dosya örneği
+
+```powershell
+# Ek yükle
+$upload = curl.exe -s -b api-cookie.txt -X POST http://localhost:4000/api/attachments `
+  -F "conversationId=<CONVERSATION_ID>" `
+  -F "file=@C:\dosyalar\not.pdf" | ConvertFrom-Json
+
+# Eki içeren mesaj gönder
+curl.exe -b api-cookie.txt -X POST http://localhost:4000/api/messages/<CONVERSATION_ID> `
+  -H "Content-Type: application/json" `
+  -d "{\"body\":\"Dosya ektedir.\",\"attachmentIds\":[\"$($upload.attachment.id)\"]}"
+```
+
+Yüklenen ek önce gönderen kullanıcının ilgili konuşmasında bekleyen durumda olur; yalnızca aynı kullanıcı, aynı konuşmaya mesaj gönderirken bu eki bağlayabilir.
+
+### Socket.IO olayları
+
+Socket.IO bağlantısı oturum çereziyle kimlik doğrular. Bağlantıdan sonra istemci `conversation:join` olayıyla konuşma kimliğini gönderir. Sunucu `conversation:updated`, `senate:invite`, `message:new`, `message:edited`, `message:deleted`, `message:read`, `message:reaction`, `typing:start` ve `typing:stop` olaylarını yayınlar. İstemci yazma durumunu `typing:start` ve `typing:stop` olaylarıyla konuşma kimliğini göndererek güncelleyebilir.
