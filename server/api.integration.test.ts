@@ -3,6 +3,7 @@ import { access, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { io as createSocket } from "socket.io-client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 type ApiResponse<T> = { status: number; body: T; cookie?: string };
@@ -64,6 +65,29 @@ async function api<T>(method: string, route: string, body?: unknown, cookie?: st
   return { status: response.status, body: await response.json() as T, cookie: setCookie };
 }
 
+function expectSocketConnectionError(cookie: string) {
+  return new Promise<void>((resolve, reject) => {
+    const socket = createSocket(baseUrl, {
+      transports: ["websocket"],
+      extraHeaders: { Cookie: cookie }
+    });
+    const timeout = setTimeout(() => {
+      socket.close();
+      reject(new Error("Socket connection was not rejected."));
+    }, 2_000);
+    socket.once("connect", () => {
+      clearTimeout(timeout);
+      socket.close();
+      reject(new Error("Deleted account connected to Socket.IO."));
+    });
+    socket.once("connect_error", () => {
+      clearTimeout(timeout);
+      socket.close();
+      resolve();
+    });
+  });
+}
+
 beforeAll(async () => {
   tempDir = await mkdtemp(path.join(os.tmpdir(), "senatoroom-api-test-"));
   const port = await getFreePort();
@@ -106,10 +130,14 @@ describe("messaging API", () => {
     const dana = await api<{ user: User }>("POST", "/api/auth/register", {
       phone: "5533772804", password: "test-password", displayName: "Dana"
     });
+    const eve = await api<{ user: User }>("POST", "/api/auth/register", {
+      phone: "5533772805", password: "test-password", displayName: "Eve"
+    });
     expect(alice.status).toBe(201);
     expect(bob.status).toBe(201);
     expect(carol.status).toBe(201);
     expect(dana.status).toBe(201);
+    expect(eve.status).toBe(201);
 
     const firstPhotoForm = new FormData();
     firstPhotoForm.append("photo", new Blob(["<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><rect width=\"1\" height=\"1\" fill=\"red\"/></svg>"], { type: "image/svg+xml" }), "profile.svg");
@@ -163,6 +191,16 @@ describe("messaging API", () => {
     expect(listedAfterLeave.body.conversations.map((conversation) => conversation.id)).not.toContain(senate.body.conversation.id);
     const inaccessibleAfterLeave = await api("GET", `/api/conversations/${senate.body.conversation.id}/messages`, undefined, bob.cookie);
     expect(inaccessibleAfterLeave.status).toBe(403);
+    const formerMemberSenate = await api<{ conversation: SenateConversation }>("POST", "/api/senates", {
+      name: "Former Member Senate", description: "", memberIds: JSON.stringify([eve.body.user.id])
+    }, alice.cookie);
+    const eveInvites = await api<{ invites: Invitation[] }>("GET", "/api/invites", undefined, eve.cookie);
+    const eveAcceptance = await api("POST", `/api/invites/${eveInvites.body.invites[0]!.id}/respond`, { action: "accept" }, eve.cookie);
+    expect(eveAcceptance.status).toBe(200);
+    const eveLeave = await api("POST", `/api/senates/${formerMemberSenate.body.conversation.senateId}/leave`, {}, eve.cookie);
+    expect(eveLeave.status).toBe(200);
+    const profileAfterLeave = await api("GET", `/api/members/${alice.body.user.id}`, undefined, eve.cookie);
+    expect(profileAfterLeave.status).toBe(403);
 
     const blockedSenate = await api<{ conversation: SenateConversation }>("POST", "/api/senates", {
       name: "Blocked Senate", description: "", memberIds: JSON.stringify([carol.body.user.id])
@@ -265,6 +303,7 @@ describe("messaging API", () => {
     expect(removeReaction.status).toBe(200);
     const deleteAccount = await api("DELETE", "/api/me", { password: "test-password" }, alice.cookie);
     expect(deleteAccount.status).toBe(200);
+    await expectSocketConnectionError(alice.cookie!);
     const oldLogin = await api("POST", "/api/auth/login", { phone: "5533772951", password: "test-password" });
     expect(oldLogin.status).toBe(401);
   });

@@ -35,12 +35,17 @@ export function readAuthToken(rawCookie = "") {
   }
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const user = readAuthToken(req.headers.cookie);
+export function getActiveAuthUser(rawCookie = "") {
+  const user = readAuthToken(rawCookie);
   const activeUser = user
-    ? sqlite.prepare("select id from users where id = ? and deleted_at is null limit 1").get(user.id)
+    ? sqlite.prepare("select 1 from users where id = ? and deleted_at is null limit 1").get(user.id)
     : null;
-  if (!user || !activeUser) {
+  return user && activeUser ? user : null;
+}
+
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const user = getActiveAuthUser(req.headers.cookie);
+  if (!user) {
     res.status(401).json({ error: "Oturum gerekli." });
     return;
   }

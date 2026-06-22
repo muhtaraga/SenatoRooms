@@ -12,7 +12,7 @@ import multer from "multer";
 import { Server } from "socket.io";
 import { config } from "./config";
 import { db, schema, sqlite } from "./db";
-import { clearAuthCookie, requireAuth, readAuthToken, setAuthCookie, signAuthToken, type AuthUser } from "./utils/auth";
+import { clearAuthCookie, getActiveAuthUser, readAuthToken, requireAuth, setAuthCookie, signAuthToken, type AuthUser } from "./utils/auth";
 import { decryptText, encryptText } from "./utils/crypto";
 import { ensureDir, safeStoredName, saveStandardImage } from "./utils/files";
 import { normalizeTurkishMobilePhone } from "./utils/phone";
@@ -201,7 +201,9 @@ function hasSharedConversation(firstUserId: string, secondUserId: string) {
       .prepare(
         `select 1 from conversation_members first_member
          join conversation_members second_member on second_member.conversation_id = first_member.conversation_id
-         where first_member.user_id = ? and second_member.user_id = ? limit 1`
+         where first_member.user_id = ? and second_member.user_id = ?
+           and first_member.left_at is null and second_member.left_at is null
+         limit 1`
       )
       .get(firstUserId, secondUserId)
   );
@@ -1495,7 +1497,7 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 });
 
 io.use((socket, next) => {
-  const user = readAuthToken(socket.handshake.headers.cookie);
+  const user = getActiveAuthUser(socket.handshake.headers.cookie);
   if (!user) {
     next(new Error("Oturum gerekli."));
     return;
