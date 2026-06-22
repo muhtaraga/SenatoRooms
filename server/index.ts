@@ -3,7 +3,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import { and, asc, desc, eq, gt, inArray, isNull, like, lt, ne, or } from "drizzle-orm";
 import express from "express";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -46,7 +46,14 @@ const upload = multer({
 });
 const apiRateLimit = rateLimit({
   windowMs: 60_000,
-  limit: 120,
+  // Authentication-aware keys prevent every user on a shared network from
+  // exhausting one common API quota. Keep a high general limit so normal chat
+  // activity and client-side refreshes do not block user actions.
+  limit: 1_000,
+  keyGenerator: (req) => readAuthToken(req.headers.cookie)?.id ?? ipKeyGenerator(req.ip ?? ""),
+  // Login and registration have their own stricter, dedicated limiter below.
+  // Do not let the general API quota block an authentication attempt first.
+  skip: (req) => req.path.startsWith("/auth/"),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Cok fazla istek gonderildi. Lutfen kisa bir sure sonra tekrar deneyin." }
@@ -62,7 +69,10 @@ const authRateLimit = rateLimit({
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
-app.use("/api", apiRateLimit);
+// Local development can issue many requests while the client reconnects or
+// reloads. Keep the broad API throttle for deployed instances, while auth
+// endpoints always retain their dedicated limiter.
+if (config.isProduction) app.use("/api", apiRateLimit);
 
 function now() {
   return new Date();
@@ -102,6 +112,11 @@ function getConversationMember(conversationId: string, userId: string) {
       isNull(schema.conversationMembers.leftAt)
     )
   }).sync();
+}
+
+function removeConversationFromUser(userId: string, conversationId: string) {
+  io.in(`user:${userId}`).socketsLeave(`conversation:${conversationId}`);
+  io.to(`user:${userId}`).emit("conversation:removed", { conversationId });
 }
 
 async function getUserSettings(userId: string) {
@@ -656,7 +671,7 @@ app.get("/api/conversations", requireAuth, async (req, res) => {
       schema.conversations,
       eq(schema.conversationMembers.conversationId, schema.conversations.id)
     )
-    .where(eq(schema.conversationMembers.userId, req.user!.id))
+    .where(and(eq(schema.conversationMembers.userId, req.user!.id), isNull(schema.conversationMembers.leftAt)))
     .orderBy(desc(schema.conversations.lastActivityAt));
   const conversations = (await Promise.all(memberships.map((member) => serializeConversation(member.conversationId, req.user!.id))))
     .filter((conversation): conversation is NonNullable<typeof conversation> => Boolean(conversation))
@@ -1002,6 +1017,7 @@ app.post("/api/senates/:id/leave", requireAuth, async (req, res) => {
     return;
   }
   await db.update(schema.conversationMembers).set({ leftAt: now(), canInvite: false }).where(and(eq(schema.conversationMembers.conversationId, senate.conversationId), eq(schema.conversationMembers.userId, req.user!.id)));
+  removeConversationFromUser(req.user!.id, senate.conversationId);
   await emitConversation(senate.conversationId);
   res.json({ ok: true });
 });
@@ -1024,6 +1040,7 @@ app.delete("/api/senates/:id/members/:memberId", requireAuth, async (req, res) =
     return;
   }
   await db.update(schema.conversationMembers).set({ leftAt: now(), canInvite: false }).where(eq(schema.conversationMembers.id, membership.id));
+  removeConversationFromUser(memberId, senate.conversationId);
   await emitConversation(senate.conversationId);
   res.json({ ok: true });
 });
@@ -1198,7 +1215,8 @@ app.post("/api/messages/:id/read", requireAuth, async (req, res) => {
   const existing = await db.query.messageReads.findFirst({
     where: and(eq(schema.messageReads.messageId, message.id), eq(schema.messageReads.userId, req.user!.id))
   });
-  if (!existing) {
+  const isNewRead = !existing;
+  if (isNewRead) {
     await db.insert(schema.messageReads).values({
       id: randomUUID(),
       messageId: message.id,
@@ -1220,7 +1238,7 @@ app.post("/api/messages/:id/read", requireAuth, async (req, res) => {
       set: { lastReadAt: now(), updatedAt: now() }
     });
   const payload = await serializeMessage(message, req.user!.id);
-  io.to(`conversation:${message.conversationId}`).emit("message:read", payload);
+  if (isNewRead) io.to(`conversation:${message.conversationId}`).emit("message:read", payload);
   res.json({ message: payload });
 });
 

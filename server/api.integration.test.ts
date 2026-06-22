@@ -137,6 +137,15 @@ describe("messaging API", () => {
     const acceptedInvite = await api<{ conversation: Conversation }>("POST", `/api/invites/${pendingInvites.body.invites[0]!.id}/respond`, { action: "accept" }, bob.cookie);
     expect(acceptedInvite.status).toBe(200);
     expect(acceptedInvite.body.conversation.id).toBe(senate.body.conversation.id);
+    const accessibleAfterAcceptance = await api("GET", `/api/conversations/${senate.body.conversation.id}/messages`, undefined, bob.cookie);
+    expect(accessibleAfterAcceptance.status).toBe(200);
+
+    const leftSenate = await api("POST", `/api/senates/${senate.body.conversation.senateId}/leave`, {}, bob.cookie);
+    expect(leftSenate.status).toBe(200);
+    const listedAfterLeave = await api<{ conversations: Conversation[] }>("GET", "/api/conversations", undefined, bob.cookie);
+    expect(listedAfterLeave.body.conversations.map((conversation) => conversation.id)).not.toContain(senate.body.conversation.id);
+    const inaccessibleAfterLeave = await api("GET", `/api/conversations/${senate.body.conversation.id}/messages`, undefined, bob.cookie);
+    expect(inaccessibleAfterLeave.status).toBe(403);
 
     const blockedSenate = await api<{ conversation: SenateConversation }>("POST", "/api/senates", {
       name: "Blocked Senate", description: "", memberIds: JSON.stringify([carol.body.user.id])
