@@ -165,6 +165,9 @@ describe("messaging API", () => {
     expect(firstConversation.status).toBe(201);
     expect(secondConversation.status).toBe(201);
 
+    const bobEmptyConversations = await api<{ conversations: Conversation[] }>("GET", "/api/conversations", undefined, bob.cookie);
+    expect(bobEmptyConversations.body.conversations.map((conversation) => conversation.id)).not.toContain(firstConversation.body.conversation.id);
+
     const senate = await api<{ conversation: SenateConversation }>("POST", "/api/senates", {
       name: "Audit Senate", description: "", memberIds: JSON.stringify([bob.body.user.id])
     }, alice.cookie);
@@ -239,6 +242,23 @@ describe("messaging API", () => {
     }, alice.cookie);
     expect(sentMessage.status).toBe(201);
     expect(sentMessage.body.message.attachments[0]?.previewUrl).toBeUndefined();
+
+    const bobConversationsAfterFirstMessage = await api<{ conversations: Conversation[] }>("GET", "/api/conversations", undefined, bob.cookie);
+    expect(bobConversationsAfterFirstMessage.body.conversations.map((conversation) => conversation.id)).toContain(firstConversation.body.conversation.id);
+
+    const deletedForBob = await api("PATCH", `/api/conversations/${firstConversation.body.conversation.id}/preferences`, {
+      clear: true, archived: true
+    }, bob.cookie);
+    expect(deletedForBob.status).toBe(200);
+    const bobActiveAfterDelete = await api<{ conversations: Conversation[] }>("GET", "/api/conversations", undefined, bob.cookie);
+    expect(bobActiveAfterDelete.body.conversations.map((conversation) => conversation.id)).not.toContain(firstConversation.body.conversation.id);
+
+    const newMessageAfterDelete = await api("POST", `/api/messages/${firstConversation.body.conversation.id}`, {
+      body: "Yeni mesaj", attachmentIds: []
+    }, alice.cookie);
+    expect(newMessageAfterDelete.status).toBe(201);
+    const bobActiveAfterNewMessage = await api<{ conversations: Conversation[] }>("GET", "/api/conversations", undefined, bob.cookie);
+    expect(bobActiveAfterNewMessage.body.conversations.map((conversation) => conversation.id)).toContain(firstConversation.body.conversation.id);
 
     const conversations = await api<{ conversations: Conversation[] }>("GET", "/api/conversations", undefined, alice.cookie);
     expect(conversations.status).toBe(200);

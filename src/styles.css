@@ -243,12 +243,28 @@ textarea { min-height: 88px; resize: vertical; }
 .member-results.selectable input { width: auto; }
 .create-senate p { margin: 0; color: var(--muted); font-size: 12px; }
 .drawer-form { padding: 21px 0; border-bottom: 1px solid var(--line); }
+.senate-photo-upload { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--accent); cursor: pointer; }
+.senate-photo-upload:hover { border-color: var(--accent); background: var(--accent-soft); }
+.senate-photo-upload > span { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; }
+.senate-photo-upload small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .member-management { display: grid; gap: 5px; padding: 20px 0; }
+.member-management-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.invite-member-button { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 7px; color: var(--surface); background: var(--accent); }
+.invite-member-button:hover { background: var(--accent-strong); }
 .member-row, .block-row { display: grid; grid-template-columns: 36px minmax(0,1fr) auto; align-items: center; gap: 9px; min-height: 52px; }
 .member-row .avatar, .block-row .avatar { width: 34px; height: 34px; flex-basis: 34px; font-size: 10px; }
 .member-actions { display: flex; gap: 3px; }
 .member-actions button, .block-row button { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; color: var(--muted); background: var(--canvas); }
 .block-row button { width: auto; padding: 0 8px; color: var(--accent); font-size: 11px; font-weight: 700; }
+.invite-dialog-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(7,17,30,.48); }
+.invite-dialog { width: min(100%, 420px); max-height: min(560px, 100%); overflow: auto; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+.invite-dialog header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.invite-dialog h2, .invite-dialog p { margin: 0; }
+.invite-dialog h2 { font-size: 19px; letter-spacing: -.025em; }
+.invite-dialog header p, .invite-empty { margin-top: 5px; color: var(--muted); font-size: 13px; }
+.invite-dialog .drawer-search { margin: 20px 0 12px; }
+.invite-dialog-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; }
+.invite-dialog-actions span { color: var(--muted); font-size: 12px; }
 
 .full-page-panel { min-width: 0; overflow: auto; padding: 38px clamp(26px, 6vw, 92px); background: var(--surface); }
 .invite-list { display: grid; gap: 12px; max-width: 800px; margin-top: 28px; }

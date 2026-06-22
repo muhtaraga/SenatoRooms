@@ -367,7 +367,7 @@ async function serializeConversation(conversationId: string, currentUserId: stri
       conversation.type === "senate"
         ? senate?.photoPath ?? null
         : profiles.find((profile) => profile.userId === otherUser?.id)?.photoPath ?? null,
-    createdById: senate?.createdById ?? null,
+    createdById: senate?.createdById ?? conversation.createdById,
     canEdit: senate?.createdById === currentUserId,
     canInvite: Boolean(member?.canInvite),
     unreadCount,
@@ -412,6 +412,9 @@ async function emitConversation(conversationId: string) {
     .where(and(eq(schema.conversationMembers.conversationId, conversationId), isNull(schema.conversationMembers.leftAt)));
   for (const member of members) {
     const payload = await serializeConversation(conversationId, member.userId);
+    if (!payload || (payload.type === "dm" && !payload.latestMessage && payload.createdById !== member.userId)) {
+      continue;
+    }
     io.to(`user:${member.userId}`).emit("conversation:updated", payload);
   }
 }
@@ -681,6 +684,7 @@ app.get("/api/conversations", requireAuth, async (req, res) => {
     .orderBy(desc(schema.conversations.lastActivityAt));
   const conversations = (await Promise.all(memberships.map((member) => serializeConversation(member.conversationId, req.user!.id))))
     .filter((conversation): conversation is NonNullable<typeof conversation> => Boolean(conversation))
+    .filter((conversation) => conversation.type !== "dm" || Boolean(conversation.latestMessage) || conversation.createdById === req.user!.id)
     .filter((conversation) => archived ? Boolean(conversation.archivedAt) : !conversation.archivedAt);
   res.json({ conversations });
 });
@@ -1171,6 +1175,16 @@ app.post("/api/messages/:conversationId", requireAuth, async (req, res) => {
       .update(schema.conversations)
       .set({ lastActivityAt: message.createdAt })
       .where(eq(schema.conversations.id, conversationId))
+      .run();
+    tx
+      .update(schema.conversationPreferences)
+      .set({ archivedAt: null, updatedAt: message.createdAt })
+      .where(
+        and(
+          eq(schema.conversationPreferences.conversationId, conversationId),
+          ne(schema.conversationPreferences.userId, req.user!.id)
+        )
+      )
       .run();
   });
   const payload = await serializeMessage(message, req.user!.id);
