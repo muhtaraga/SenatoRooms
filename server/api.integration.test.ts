@@ -6,7 +6,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 type ApiResponse<T> = { status: number; body: T; cookie?: string };
-type User = { id: string };
+type User = { id: string; photoPath?: string | null };
 type Conversation = { id: string };
 type SenateConversation = Conversation & { senateId: string };
 type Attachment = { id: string };
@@ -110,6 +110,23 @@ describe("messaging API", () => {
     expect(bob.status).toBe(201);
     expect(carol.status).toBe(201);
     expect(dana.status).toBe(201);
+
+    const firstPhotoForm = new FormData();
+    firstPhotoForm.append("photo", new Blob(["<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><rect width=\"1\" height=\"1\" fill=\"red\"/></svg>"], { type: "image/svg+xml" }), "profile.svg");
+    const firstPhoto = await api<{ photoPath: string }>("POST", "/api/me/photo", firstPhotoForm, alice.cookie);
+    expect(firstPhoto.status).toBe(200);
+    expect(firstPhoto.body.photoPath).toMatch(/^\/uploads\/.+\.webp$/);
+    await expect(access(path.join(tempDir, "uploads", path.basename(firstPhoto.body.photoPath)))).resolves.toBeUndefined();
+
+    const secondPhotoForm = new FormData();
+    secondPhotoForm.append("photo", new Blob(["<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><rect width=\"1\" height=\"1\" fill=\"blue\"/></svg>"], { type: "image/svg+xml" }), "profile.svg");
+    const secondPhoto = await api<{ photoPath: string }>("POST", "/api/me/photo", secondPhotoForm, alice.cookie);
+    expect(secondPhoto.status).toBe(200);
+    expect(secondPhoto.body.photoPath).not.toBe(firstPhoto.body.photoPath);
+    await expect(access(path.join(tempDir, "uploads", path.basename(firstPhoto.body.photoPath)))).rejects.toThrow();
+
+    const refreshedProfile = await api<{ user: User }>("GET", "/api/me", undefined, alice.cookie);
+    expect(refreshedProfile.body.user.photoPath).toBe(secondPhoto.body.photoPath);
 
     const wildcardSearch = await api<{ members: User[] }>("GET", "/api/members?query=%25", undefined, alice.cookie);
     expect(wildcardSearch.status).toBe(200);

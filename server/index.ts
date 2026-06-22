@@ -607,6 +607,7 @@ app.post("/api/me/photo", requireAuth, upload.single("photo"), async (req, res) 
     return;
   }
   let photoPath: string;
+  const existingProfile = await getProfile(req.user!.id);
   try {
     photoPath = await saveStandardImage(req.file, config.uploadDir);
   } catch {
@@ -617,6 +618,9 @@ app.post("/api/me/photo", requireAuth, upload.single("photo"), async (req, res) 
     .update(schema.profiles)
     .set({ photoPath, updatedAt: now() })
     .where(eq(schema.profiles.userId, req.user!.id));
+  if (existingProfile?.photoPath && existingProfile.photoPath !== photoPath) {
+    fs.rmSync(path.join(config.uploadDir, path.basename(existingProfile.photoPath)), { force: true });
+  }
   res.json({ photoPath });
 });
 

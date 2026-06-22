@@ -158,8 +158,13 @@ textarea { min-height: 88px; resize: vertical; }
 .message.mine .reply-preview { background: rgba(255,255,255,.13); color: white; }
 .reply-preview b { font-size: 11px; }
 .reply-preview span { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.message-image { display: block; max-width: 360px; margin-top: 7px; overflow: hidden; border-radius: 8px; }
+.message-image { display: block; max-width: 360px; margin-top: 7px; padding: 0; overflow: hidden; border: 0; border-radius: 8px; background: transparent; cursor: zoom-in; }
 .message-image img { display: block; width: 100%; max-height: 250px; object-fit: cover; }
+.image-preview-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 24px; background: rgba(7,17,30,.72); }
+.image-preview-modal { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(960px, 100%); max-height: min(860px, 100%); overflow: hidden; border-radius: 12px; background: var(--canvas); box-shadow: 0 24px 64px rgba(0,0,0,.4); }
+.image-preview-modal header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--line); }
+.image-preview-modal header span { overflow: hidden; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.image-preview-modal > img { display: block; width: 100%; height: 100%; min-height: 0; object-fit: contain; background: #111; }
 .message-video { display: block; width: min(100%, 420px); max-height: 320px; margin-top: 7px; border-radius: 8px; background: #07101c; }
 .attachment-card { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 9px; min-width: 210px; max-width: 360px; margin-top: 8px; padding: 9px; border: 1px solid rgba(255,255,255,.24); border-radius: 8px; color: inherit; background: rgba(255,255,255,.08); text-decoration: none; }
 .message:not(.mine) .attachment-card { border-color: var(--line); background: var(--canvas); }
@@ -269,8 +274,10 @@ textarea { min-height: 88px; resize: vertical; }
 .settings-content > header { display: block; max-width: 720px; margin-bottom: 28px; }
 .settings-content h2 { margin: 0; font-size: 27px; letter-spacing: -.04em; }
 .identity-row { display: flex; align-items: center; gap: 16px; max-width: 720px; padding: 18px 0 25px; border-bottom: 1px solid var(--line); }
-.profile-photo { position: relative; overflow: hidden; padding: 0; border: 0; border-radius: 50%; background: transparent; }
-.profile-photo span { position: absolute; inset: auto 0 0; padding: 5px; color: white; background: rgba(8,20,35,.72); font-size: 9px; white-space: nowrap; }
+.profile-photo { display: inline-flex; align-items: center; gap: 10px; min-height: 48px; padding: 6px 12px 6px 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--canvas); color: var(--accent); }
+.profile-photo > .avatar { width: 48px; height: 48px; flex-basis: 48px; font-size: 14px; }
+.profile-photo > span:not(.avatar) { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: 13px; font-weight: 700; white-space: nowrap; }
+.profile-photo:hover { border-color: var(--accent); background: var(--accent-soft); }
 .identity-row > div { display: grid; gap: 4px; }
 .identity-row strong { font-size: 16px; }
 .identity-row span { color: var(--muted); font-size: 13px; }
