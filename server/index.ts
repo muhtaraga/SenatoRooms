@@ -966,7 +966,11 @@ app.post("/api/invites/:id/respond", requireAuth, async (req, res) => {
     return;
   }
   db.transaction((tx) => {
-    const membership = getConversationMember(senate.conversationId, req.user!.id);
+    const membership = tx
+      .select()
+      .from(schema.conversationMembers)
+      .where(and(eq(schema.conversationMembers.conversationId, senate.conversationId), eq(schema.conversationMembers.userId, req.user!.id)))
+      .get();
     if (!membership) {
       tx.insert(schema.conversationMembers).values({
         id: randomUUID(),
@@ -975,6 +979,12 @@ app.post("/api/invites/:id/respond", requireAuth, async (req, res) => {
         canInvite: false,
         joinedAt: now()
       }).run();
+    } else if (membership.leftAt) {
+      tx
+        .update(schema.conversationMembers)
+        .set({ canInvite: false, joinedAt: now(), leftAt: null })
+        .where(eq(schema.conversationMembers.id, membership.id))
+        .run();
     }
     tx.update(schema.senateInvites).set({ status: "accepted" }).where(eq(schema.senateInvites.id, invite.id)).run();
   });

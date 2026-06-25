@@ -10,6 +10,7 @@ import {
   Clock3,
   Database,
   Download,
+  File as FileIcon,
   FileText,
   FileUp,
   Image,
@@ -20,6 +21,7 @@ import {
   MessageCircle,
   MoreHorizontal,
   Moon,
+  Music,
   Paperclip,
   Palette,
   Plus,
@@ -33,6 +35,7 @@ import {
   Trash2,
   UserMinus,
   UserPlus,
+  Video,
   Users,
   Volume2,
   VolumeX,
@@ -45,6 +48,20 @@ import type { Attachment, Conversation, Invitation, Member, Message, Notificatio
 
 type Nav = "all" | "private" | "senates" | "invites" | "archived" | "settings" | "admin";
 type SettingsSection = "account" | "privacy" | "notifications" | "appearance" | "storage";
+type UploadFileType = {
+  id: "image" | "video" | "audio" | "document" | "all";
+  label: string;
+  accept: string;
+  icon: ReactNode;
+};
+
+const UPLOAD_FILE_TYPES: UploadFileType[] = [
+  { id: "image", label: "Görsel", accept: "image/*", icon: <Image size={16} /> },
+  { id: "video", label: "Video", accept: "video/*", icon: <Video size={16} /> },
+  { id: "audio", label: "Ses", accept: "audio/*", icon: <Music size={16} /> },
+  { id: "document", label: "Belge", accept: ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.rtf,.csv,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation", icon: <FileText size={16} /> },
+  { id: "all", label: "Tüm dosyalar", accept: "", icon: <FileIcon size={16} /> }
+];
 
 const DEFAULT_SETTINGS: UserSettings = {
   userId: "",
@@ -135,6 +152,7 @@ function ChatPanel({ user, conversation, messages, hasMore, onLoadOlder, onSend,
   const [reply, setReply] = useState<Message | null>(null);
   const [editing, setEditing] = useState<{ id: string; body: string } | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [previewImage, setPreviewImage] = useState<Attachment | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -146,7 +164,7 @@ function ChatPanel({ user, conversation, messages, hasMore, onLoadOlder, onSend,
   const restoringScrollRef = useRef<{ height: number; top: number } | null>(null);
   const loadingOlderRef = useRef(false);
   const markedMessageIdsRef = useRef(new Set<string>());
-  useEffect(() => { setBody(""); setPending([]); setReply(null); setEditing(null); setPreviewImage(null); markedMessageIdsRef.current = new Set(); }, [conversation?.id]);
+  useEffect(() => { setBody(""); setPending([]); setReply(null); setEditing(null); setUploadMenuOpen(false); setPreviewImage(null); markedMessageIdsRef.current = new Set(); }, [conversation?.id]);
   useEffect(() => {
     if (!previewImage) return;
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setPreviewImage(null); };
@@ -210,13 +228,19 @@ function ChatPanel({ user, conversation, messages, hasMore, onLoadOlder, onSend,
     setUploadError("");
     try { const attachment = await onUpload(file); setPending((items) => [...items, attachment]); } catch (err) { setUploadError(err instanceof Error ? err.message : "Dosya yüklenemedi."); }
   }
+  function openFilePicker(type: UploadFileType) {
+    setUploadMenuOpen(false);
+    if (!fileRef.current) return;
+    fileRef.current.accept = type.accept;
+    fileRef.current.click();
+  }
   async function submit() {
     if (!body.trim() && !pending.length) return;
     const sent = await onSend(body, pending.map((item) => item.id), reply?.id);
     if (sent) { setBody(""); setPending([]); setReply(null); }
   }
   let previousDate = "";
-  return <section className="chat-panel"><header className="chat-header"><div className="chat-identity"><Avatar name={conversation.title} photoPath={conversation.photoPath} senate={conversation.type === "senate"} /><div><h2>{conversation.title}</h2><p>{conversation.type === "senate" ? `${conversation.members.length} üye` : conversation.mutedUntil ? "Bildirimler sessizde" : "Özel konuşma"}</p></div></div><div className="chat-actions"><IconButton label="Sohbette ara" onClick={onSearch}><Search size={19} /></IconButton><IconButton label={conversation.type === "senate" ? "Senato bilgileri" : "Sohbet ayarları"} onClick={conversation.type === "senate" ? onOpenSenate : onOpenSettings}><MoreHorizontal size={20} /></IconButton></div></header><div className="message-stream" ref={streamRef}>{hasMore ? <span className="load-older" aria-live="polite">Eski mesajlar için yukarı kaydırın</span> : null}{messages.map((message) => { const date = new Date(message.createdAt).toDateString(); const showDate = date !== previousDate; previousDate = date; const mine = message.senderId === user.id; const isEditing = editing?.id === message.id; return <div key={message.id}>{showDate ? <div className="date-divider"><span>{formatDate(message.createdAt)}</span></div> : null}<article className={`message ${mine ? "mine" : ""}`}><div className="message-avatar">{!mine ? <Avatar name={message.senderName} /> : null}</div><div className="message-stack">{!mine && conversation.type === "senate" ? <strong className="message-sender">{message.senderName}</strong> : null}<div className="message-bubble">{message.replyTo ? <div className="reply-preview"><b>{message.replyTo.senderName}</b><span>{message.replyTo.body}</span></div> : null}{message.deletedAt ? <em>Bu mesaj silindi.</em> : isEditing ? <div className="message-editor"><textarea value={editing.body} onChange={(event) => setEditing({ ...editing, body: event.target.value })} /><div><button onClick={() => setEditing(null)}>İptal</button><button onClick={() => { if (editing.body.trim()) { onEdit(message.id, editing.body); setEditing(null); } }}>Kaydet</button></div></div> : <p>{message.body}</p>}{message.attachments.map((attachment) => <AttachmentView key={attachment.id} attachment={attachment} onOpenImage={setPreviewImage} />)}<footer><span>{formatTime(message.createdAt)}</span>{message.editedAt ? <span>düzenlendi</span> : null}{mine ? message.readCount > 1 ? <CheckCheck size={15} /> : <Check size={15} /> : null}</footer></div>{!message.deletedAt ? <div className="reaction-row">{message.reactions.map((reaction) => <button key={reaction.emoji} className={reaction.reacted ? "reacted" : ""} onClick={() => reaction.reacted ? onUnreact(message.id, reaction.emoji) : onReact(message.id, reaction.emoji)}>{reaction.emoji} <span>{reaction.count}</span></button>)}<button className="quick-reaction" aria-label="Beğen" onClick={() => onReact(message.id, "👍")}><Smile size={15} /></button></div> : null}</div><div className="message-menu-wrap">{!message.deletedAt ? <IconButton label="Mesaj işlemleri" onClick={() => setMenuId(menuId === message.id ? null : message.id)}><MoreHorizontal size={17} /></IconButton> : null}{menuId === message.id ? <div className="message-menu"><button onClick={() => { setReply(message); setMenuId(null); }}>Yanıtla</button>{mine ? <><button onClick={() => { setEditing({ id: message.id, body: message.body }); setMenuId(null); }}>Düzenle</button><button className="danger-text" onClick={() => { onDelete(message.id); setMenuId(null); }}>Sil</button></> : null}</div> : null}</div></article></div>; })}</div>{pending.length ? <div className="pending-files">{pending.map((item) => <span key={item.id}><Paperclip size={15} />{item.originalName}<button onClick={() => setPending((current) => current.filter((pendingItem) => pendingItem.id !== item.id))}><X size={14} /></button></span>)}</div> : null}{reply ? <div className="composer-reply"><div><b>{reply.senderName} mesajına yanıt</b><span>{reply.body}</span></div><IconButton label="Yanıtı kaldır" onClick={() => setReply(null)}><X size={17} /></IconButton></div> : null}{uploadError ? <p className="composer-error">{uploadError}</p> : null}<footer className="composer"><input ref={fileRef} hidden type="file" onChange={(event) => { void upload(event.target.files?.[0]); event.currentTarget.value = ""; }} /><IconButton label="Dosya ekle" onClick={() => fileRef.current?.click()}><FileUp size={19} /></IconButton><textarea value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Mesaj yazın" /><IconButton label="Gönder" onClick={() => void submit()} active><Send size={19} /></IconButton></footer>{previewImage?.previewUrl ? <div className="image-preview-backdrop" role="presentation" onClick={() => setPreviewImage(null)}><section className="image-preview-modal" role="dialog" aria-modal="true" aria-label={previewImage.originalName} onClick={(event) => event.stopPropagation()}><header><span>{previewImage.originalName}</span><IconButton label="Görsel önizlemeyi kapat" onClick={() => setPreviewImage(null)}><X size={20} /></IconButton></header><img src={previewImage.previewUrl} alt={previewImage.originalName} /></section></div> : null}</section>;
+  return <section className="chat-panel"><header className="chat-header"><div className="chat-identity"><Avatar name={conversation.title} photoPath={conversation.photoPath} senate={conversation.type === "senate"} /><div><h2>{conversation.title}</h2><p>{conversation.type === "senate" ? `${conversation.members.length} üye` : conversation.mutedUntil ? "Bildirimler sessizde" : "Özel konuşma"}</p></div></div><div className="chat-actions"><IconButton label="Sohbette ara" onClick={onSearch}><Search size={19} /></IconButton><IconButton label={conversation.type === "senate" ? "Senato bilgileri" : "Sohbet ayarları"} onClick={conversation.type === "senate" ? onOpenSenate : onOpenSettings}><MoreHorizontal size={20} /></IconButton></div></header><div className="message-stream" ref={streamRef}>{hasMore ? <span className="load-older" aria-live="polite">Eski mesajlar için yukarı kaydırın</span> : null}{messages.map((message) => { const date = new Date(message.createdAt).toDateString(); const showDate = date !== previousDate; previousDate = date; const mine = message.senderId === user.id; const isEditing = editing?.id === message.id; return <div key={message.id}>{showDate ? <div className="date-divider"><span>{formatDate(message.createdAt)}</span></div> : null}<article className={`message ${mine ? "mine" : ""}`}><div className="message-avatar">{!mine ? <Avatar name={message.senderName} /> : null}</div><div className="message-stack">{!mine && conversation.type === "senate" ? <strong className="message-sender">{message.senderName}</strong> : null}<div className="message-bubble">{message.replyTo ? <div className="reply-preview"><b>{message.replyTo.senderName}</b><span>{message.replyTo.body}</span></div> : null}{message.deletedAt ? <em>Bu mesaj silindi.</em> : isEditing ? <div className="message-editor"><textarea value={editing.body} onChange={(event) => setEditing({ ...editing, body: event.target.value })} /><div><button onClick={() => setEditing(null)}>İptal</button><button onClick={() => { if (editing.body.trim()) { onEdit(message.id, editing.body); setEditing(null); } }}>Kaydet</button></div></div> : <p>{message.body}</p>}{message.attachments.map((attachment) => <AttachmentView key={attachment.id} attachment={attachment} onOpenImage={setPreviewImage} />)}<footer><span>{formatTime(message.createdAt)}</span>{message.editedAt ? <span>düzenlendi</span> : null}{mine ? message.readCount > 1 ? <CheckCheck size={15} /> : <Check size={15} /> : null}</footer></div>{!message.deletedAt ? <div className="reaction-row">{message.reactions.map((reaction) => <button key={reaction.emoji} className={reaction.reacted ? "reacted" : ""} onClick={() => reaction.reacted ? onUnreact(message.id, reaction.emoji) : onReact(message.id, reaction.emoji)}>{reaction.emoji} <span>{reaction.count}</span></button>)}<button className="quick-reaction" aria-label="Beğen" onClick={() => onReact(message.id, "👍")}><Smile size={15} /></button></div> : null}</div><div className="message-menu-wrap">{!message.deletedAt ? <IconButton label="Mesaj işlemleri" onClick={() => setMenuId(menuId === message.id ? null : message.id)}><MoreHorizontal size={17} /></IconButton> : null}{menuId === message.id ? <div className="message-menu"><button onClick={() => { setReply(message); setMenuId(null); }}>Yanıtla</button>{mine ? <><button onClick={() => { setEditing({ id: message.id, body: message.body }); setMenuId(null); }}>Düzenle</button><button className="danger-text" onClick={() => { onDelete(message.id); setMenuId(null); }}>Sil</button></> : null}</div> : null}</div></article></div>; })}</div>{pending.length ? <div className="pending-files">{pending.map((item) => <span key={item.id}><Paperclip size={15} />{item.originalName}<button onClick={() => setPending((current) => current.filter((pendingItem) => pendingItem.id !== item.id))}><X size={14} /></button></span>)}</div> : null}{reply ? <div className="composer-reply"><div><b>{reply.senderName} mesajına yanıt</b><span>{reply.body}</span></div><IconButton label="Yanıtı kaldır" onClick={() => setReply(null)}><X size={17} /></IconButton></div> : null}{uploadError ? <p className="composer-error">{uploadError}</p> : null}<footer className="composer"><input ref={fileRef} hidden type="file" onChange={(event) => { void upload(event.target.files?.[0]); event.currentTarget.value = ""; }} /><div className="upload-picker"><IconButton label="Dosya tipi seç" onClick={() => setUploadMenuOpen((open) => !open)}><FileUp size={19} /></IconButton>{uploadMenuOpen ? <div className="upload-type-menu" role="menu">{UPLOAD_FILE_TYPES.map((type) => <button key={type.id} type="button" role="menuitem" onClick={() => openFilePicker(type)}>{type.icon}<span>{type.label}</span></button>)}</div> : null}</div><textarea value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submit(); } }} placeholder="Mesaj yazın" /><IconButton label="Gönder" onClick={() => void submit()} active><Send size={19} /></IconButton></footer>{previewImage?.previewUrl ? <div className="image-preview-backdrop" role="presentation" onClick={() => setPreviewImage(null)}><section className="image-preview-modal" role="dialog" aria-modal="true" aria-label={previewImage.originalName} onClick={(event) => event.stopPropagation()}><header><span>{previewImage.originalName}</span><IconButton label="Görsel önizlemeyi kapat" onClick={() => setPreviewImage(null)}><X size={20} /></IconButton></header><img src={previewImage.previewUrl} alt={previewImage.originalName} /></section></div> : null}</section>;
 }
 
 function SearchDrawer({ open, conversation, onClose, onSearch }: { open: boolean; conversation: Conversation | null; onClose: () => void; onSearch: (query: string) => Promise<Message[]> }) {

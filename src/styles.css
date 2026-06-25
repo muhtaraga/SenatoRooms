@@ -201,6 +201,10 @@ textarea { min-height: 88px; resize: vertical; }
 .composer textarea { min-height: 44px; max-height: 140px; padding: 12px; resize: none; }
 .composer .icon-button { background: var(--canvas); }
 .composer .icon-button.active { background: var(--accent); }
+.upload-picker { position: relative; }
+.upload-type-menu { position: absolute; left: 0; bottom: 48px; z-index: 5; display: grid; min-width: 160px; padding: 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.upload-type-menu button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 10px; border: 0; border-radius: 6px; color: var(--ink); background: transparent; text-align: left; font-size: 13px; }
+.upload-type-menu button:hover { background: var(--canvas); }
 .empty-chat { display: grid; place-items: center; align-content: center; gap: 10px; padding: 40px; background: var(--canvas); color: var(--muted); text-align: center; }
 .empty-chat-icon { display: grid; place-items: center; width: 64px; height: 64px; border: 1px solid var(--line); border-radius: 50%; color: var(--accent); background: var(--surface); }
 .empty-chat h2 { margin: 8px 0 0; color: var(--ink); font-size: 20px; }

@@ -12,7 +12,7 @@ type Conversation = { id: string };
 type SenateConversation = Conversation & { senateId: string };
 type Attachment = { id: string };
 type MessageResponse = { message: { attachments: Array<{ previewUrl?: string }> } };
-type Invitation = { id: string };
+type Invitation = { id: string; senateId: string };
 
 const root = process.cwd();
 const tsxCli = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
@@ -194,6 +194,16 @@ describe("messaging API", () => {
     expect(listedAfterLeave.body.conversations.map((conversation) => conversation.id)).not.toContain(senate.body.conversation.id);
     const inaccessibleAfterLeave = await api("GET", `/api/conversations/${senate.body.conversation.id}/messages`, undefined, bob.cookie);
     expect(inaccessibleAfterLeave.status).toBe(403);
+    const reinviteFormerMember = await api("POST", `/api/senates/${senate.body.conversation.senateId}/invites`, { memberId: bob.body.user.id }, alice.cookie);
+    expect(reinviteFormerMember.status).toBe(200);
+    const formerMemberInvites = await api<{ invites: Invitation[] }>("GET", "/api/invites", undefined, bob.cookie);
+    const formerMemberInvite = formerMemberInvites.body.invites.find((invite) => invite.senateId === senate.body.conversation.senateId);
+    expect(formerMemberInvite).toBeTruthy();
+    const formerMemberReacceptance = await api("POST", `/api/invites/${formerMemberInvite!.id}/respond`, { action: "accept" }, bob.cookie);
+    expect(formerMemberReacceptance.status).toBe(200);
+    const accessibleAfterReacceptance = await api("GET", `/api/conversations/${senate.body.conversation.id}/messages`, undefined, bob.cookie);
+    expect(accessibleAfterReacceptance.status).toBe(200);
+
     const formerMemberSenate = await api<{ conversation: SenateConversation }>("POST", "/api/senates", {
       name: "Former Member Senate", description: "", memberIds: JSON.stringify([eve.body.user.id])
     }, alice.cookie);
