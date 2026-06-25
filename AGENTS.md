@@ -16,6 +16,7 @@
 - Data: SQLite + Drizzle; schema is `server/db/schema.ts`, migrations are `server/db/migrations/`.
 - Shared client contracts: `src/types.ts`; client HTTP helpers: `src/api.ts`.
 - Server utilities: `server/utils/`.
+- Runtime configuration is centralized in `server/config.ts`; documented defaults live in `.env.example`.
 
 ## Preserve invariants
 
@@ -34,11 +35,16 @@
 4. Run the narrowest relevant test first. Run `npm.cmd run build` for client, server, type, or shared-contract changes. Run `npm.cmd test` when the relevant suite is not isolated or the change affects core behavior.
 5. Report changed files and exact verification performed. If verification is not run, state why.
 
+Integration tests start the server with a temporary SQLite database, upload directory, backup directory, and test secrets. Prefer that isolated pattern when adding server/API coverage instead of using local `.env` data.
+
 ## Commands
 
 ```powershell
 npm.cmd run dev
+npm.cmd run dev:client
+npm.cmd run dev:server
 npm.cmd run build
+npm.cmd start
 npm.cmd test
 npm.cmd run db:generate
 npm.cmd run db:migrate

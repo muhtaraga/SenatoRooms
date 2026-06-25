@@ -7,7 +7,7 @@ SenatoRoom; özel bire bir mesajlaşma ve davetli grup sohbetleri (senatolar) i�
 - Telefon numarası ve parola ile kayıt/giriş; Türkiye cep telefonu biçimi doğrulaması
 - Bire bir sohbetler ve davet kabulüne dayalı senatolar
 - Anlık mesajlar, yazıyor göstergesi, okunma bilgisi, mesaj düzenleme ve silme
-- Profil, senato ve mesaj eki görselleri; dosya eki yükleme ve medya önizlemesi
+- Profil, senato ve mesaj eki görselleri; görsel/video/ses/belge seçimiyle dosya eki yükleme ve görsel/video önizlemesi
 - Mesaj gövdelerinin sunucuda AES-256-GCM ile şifrelenmesi
 - Socket.IO ile gerçek zamanlı güncellemeler
 - Sayfalanmış mesaj geçmişi ve kullanılmayan eklerin otomatik temizliği
